@@ -47,15 +47,7 @@ export class KitchenService {
         .values(orderData)
         .execute();
 
-      const ingredientsAvailable = await this.requestIngredients(
-        recipe.ingredients,
-      );
-
-      if (!ingredientsAvailable) {
-        const pausedOrder = { ...order, statusId: OrderStatus.PAUSED };
-
-        return this.managerClient.emit('order_status_changed', pausedOrder);
-      }
+      await this.requestIngredients(recipe.ingredients);
 
       await this.processOrder(order, recipe);
 
@@ -80,23 +72,13 @@ export class KitchenService {
     return recipes[randomIndex];
   }
 
-  async requestIngredients(ingredients: {
-    [key: string]: number;
-  }): Promise<boolean> {
+  async requestIngredients(ingredients: { [key: string]: number }) {
     console.log('Asking for ingredients to the Warehouse:', ingredients);
 
     try {
-      const response = await firstValueFrom(
+      return await firstValueFrom(
         this.warehouseClient.send('request_ingredients', ingredients),
       );
-
-      if (!response.success) {
-        console.error('Ingredients not available:', ingredients);
-
-        return false;
-      }
-
-      return true;
     } catch (error) {
       console.error('Communication error with the Warehouse:', error);
 
