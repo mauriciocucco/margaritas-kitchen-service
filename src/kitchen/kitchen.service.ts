@@ -32,7 +32,7 @@ export class KitchenService {
     try {
       const orderInProgress = { ...order, statusId: OrderStatus.IN_PROGRESS };
 
-      this.managerClient.emit('order_in_progress', orderInProgress);
+      this.managerClient.emit('order_status_changed', orderInProgress);
 
       const recipe = await this.getRandomRecipe();
       const orderData = {
@@ -54,14 +54,14 @@ export class KitchenService {
       if (!ingredientsAvailable) {
         const pausedOrder = { ...order, statusId: OrderStatus.PAUSED };
 
-        return this.managerClient.emit('missing_ingredients', pausedOrder);
+        return this.managerClient.emit('order_status_changed', pausedOrder);
       }
 
       await this.processOrder(order, recipe);
 
       const completedOrder = { ...order, statusId: OrderStatus.COMPLETED };
 
-      this.managerClient.emit('order_completed', completedOrder);
+      this.managerClient.emit('order_status_changed', completedOrder);
 
       console.log(`Kitchen Service has completed the order ${order.id}.`);
     } catch (error) {
@@ -69,7 +69,7 @@ export class KitchenService {
 
       const failedOrder = { ...order, statusId: OrderStatus.FAILED };
 
-      this.managerClient.emit('order_failed', failedOrder);
+      this.managerClient.emit('order_status_changed', failedOrder);
     }
   }
 
