@@ -5,6 +5,7 @@ import { RecipeEntity } from './entities/recipe.entity';
 import { OrderEntity } from './entities/order.entity';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { KitchenController } from './kitchen.controller';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       },
     ]),
   ],
+  controllers: [KitchenController],
   providers: [KitchenService],
 })
 export class KitchenModule {}

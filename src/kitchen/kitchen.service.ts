@@ -3,7 +3,7 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { ClientProxy, EventPattern } from '@nestjs/microservices';
+import { ClientProxy } from '@nestjs/microservices';
 import { OrderDto } from './dtos/order.dto';
 import { OrderStatus } from './enums/order-status.enum';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -21,10 +21,12 @@ export class KitchenService {
     private readonly recipeRepository: Repository<RecipeEntity>,
     @InjectRepository(OrderEntity)
     private readonly orderRepository: Repository<OrderEntity>,
-  ) {}
+  ) {
+    this.managerClient.connect();
+    this.warehouseClient.connect();
+  }
 
-  @EventPattern('order_dispatched')
-  async handleOrderCreated(order: OrderDto) {
+  async handleOrderDispatched(order: OrderDto) {
     console.log(
       `Kitchen Service has receive the order ${order.id} for processing.`,
     );
@@ -35,10 +37,16 @@ export class KitchenService {
       this.managerClient.emit('order_status_changed', orderInProgress);
 
       const recipe = await this.getRandomRecipe();
+
+      console.log('Random recipe selected:', recipe);
+
       const orderData = {
         id: order.id,
         recipeId: recipe.id,
+        customerId: order.customerId,
       };
+
+      console.log('Creating order:', orderData);
 
       await this.orderRepository
         .createQueryBuilder()
@@ -94,17 +102,17 @@ export class KitchenService {
         this.warehouseClient.send('reduce_ingredients', recipe.ingredients),
       );
 
+      console.log('Ingredients reduced:', response);
+
       if (!response.success) {
-        throw new InternalServerErrorException(
-          'Failed to reduce ingredients in the Warehouse',
-        );
+        throw new Error('Failed to reduce ingredients in the Warehouse');
       }
 
       return new Promise<void>((resolve) => {
         setTimeout(() => {
           console.log(`Order ${order.id} - ${recipe.name} prepared.`);
           resolve();
-        }, 10000);
+        }, 5000);
       });
     } catch (error) {
       console.error(
