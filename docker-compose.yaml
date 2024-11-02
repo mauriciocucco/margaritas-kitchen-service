@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  kitchen_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '3006:3006'
+    env_file:
+      - .env.development
+    depends_on:
+      - kitchen_database
+
+  kitchen_database:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: kitchen_db
+      POSTGRES_USER: maurisc
+      POSTGRES_PASSWORD: alegra_challenge
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres_kitchen_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_kitchen_data:
