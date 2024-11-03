@@ -26,19 +26,32 @@ export class KitchenService {
     this.warehouseClient.connect();
   }
 
+  async getRecipes(): Promise<RecipeEntity[]> {
+    return await this.recipeRepository.find({
+      cache: {
+        id: 'recipes_cache',
+        milliseconds: Number.MAX_SAFE_INTEGER,
+      },
+    });
+  }
+
   async handleOrderDispatched(order: OrderDto) {
     console.log(
       `Kitchen Service has receive the order ${order.id} for processing.`,
     );
 
     try {
-      const orderInProgress = { ...order, statusId: OrderStatus.IN_PROGRESS };
-
-      this.managerClient.emit('order_status_changed', orderInProgress);
-
       const recipe = await this.getRandomRecipe();
 
       console.log('Random recipe selected:', recipe);
+
+      const orderInProgress = {
+        ...order,
+        statusId: OrderStatus.IN_PROGRESS,
+        recipeName: recipe.name,
+      };
+
+      this.managerClient.emit('order_status_changed', orderInProgress);
 
       const orderData = {
         id: order.id,

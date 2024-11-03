@@ -25,7 +25,7 @@ export class OrderEntity {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamp' })
   updatedAt: Date;
 
-  @ManyToOne(() => RecipeEntity)
-  @JoinColumn({ name: 'recipe_id' })
+  @ManyToOne(() => RecipeEntity, { eager: true })
+  @JoinColumn({ name: 'recipe_id', referencedColumnName: 'id' })
   recipe: RecipeEntity;
 }

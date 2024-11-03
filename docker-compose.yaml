@@ -11,6 +11,8 @@ services:
       - .env.development
     depends_on:
       - kitchen_database
+    networks:
+      - external_network
 
   kitchen_database:
     image: postgres:14
@@ -22,6 +24,12 @@ services:
       - '5433:5432'
     volumes:
       - postgres_kitchen_data:/var/lib/postgresql/data
+    networks:
+      - external_network
+
+networks:
+  external_network:
+    external: true
 
 volumes:
   postgres_kitchen_data:
