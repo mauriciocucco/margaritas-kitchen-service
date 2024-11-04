@@ -16,7 +16,7 @@ export class KitchenController {
   }
 
   @EventPattern(Events.ORDER_DISPATCHED)
-  async handleOrderDispatched(order: OrderDto) {
-    await this.kitchenService.handleOrderDispatched(order);
+  async handleOrderDispatched(orders: OrderDto[]) {
+    await this.kitchenService.handleOrderDispatched(orders);
   }
 }

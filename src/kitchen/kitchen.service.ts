@@ -7,7 +7,7 @@ import { ClientProxy } from '@nestjs/microservices';
 import { OrderDto } from './dtos/order.dto';
 import { OrderStatus } from './enums/order-status.enum';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { RecipeEntity } from './entities/recipe.entity';
 import { OrderEntity } from './entities/order.entity';
 import { firstValueFrom } from 'rxjs';
@@ -22,6 +22,7 @@ export class KitchenService {
     private readonly recipeRepository: Repository<RecipeEntity>,
     @InjectRepository(OrderEntity)
     private readonly orderRepository: Repository<OrderEntity>,
+    private readonly dataSource: DataSource,
   ) {
     this.managerClient.connect();
     this.warehouseClient.connect();
@@ -36,54 +37,81 @@ export class KitchenService {
     });
   }
 
-  async handleOrderDispatched(order: OrderDto) {
+  async handleOrderDispatched(orders: OrderDto[]): Promise<void> {
     console.log(
-      `Kitchen Service has receive the order ${order.id} for processing.`,
+      `Kitchen Service has receive the orders for processing: ${JSON.stringify(orders)}`,
     );
 
+    const queryRunner = this.dataSource.createQueryRunner();
+    const ordersInProgress = [];
+    const ingredientsMap: { [key: string]: number } = {};
+
     try {
-      const recipe = await this.getRandomRecipe();
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
 
-      console.log('Random recipe selected:', recipe);
+      for (const order of orders) {
+        const recipe = await this.getRandomRecipe();
 
-      const orderInProgress = {
-        ...order,
-        statusId: OrderStatus.IN_PROGRESS,
-        recipeName: recipe.name,
-      };
+        console.log(
+          `Random recipe selected for order ${order.id}: ${recipe.name}`,
+        );
 
-      this.managerClient.emit(Events.ORDER_STATUS_CHANGED, orderInProgress);
+        const orderInProgress = {
+          ...order,
+          statusId: OrderStatus.IN_PROGRESS,
+          recipeName: recipe.name,
+        };
 
-      const orderData = {
-        id: order.id,
-        recipeId: recipe.id,
-        customerId: order.customerId,
-      };
+        ordersInProgress.push(orderInProgress);
 
-      console.log('Creating order:', orderData);
+        for (const [ingredient, quantity] of Object.entries(
+          recipe.ingredients,
+        )) {
+          ingredientsMap[ingredient] =
+            (ingredientsMap[ingredient] || 0) + quantity;
+        }
+      }
+
+      this.managerClient.emit(Events.ORDER_STATUS_CHANGED, ordersInProgress);
+
+      const orderEntities = ordersInProgress.map(
+        ({ id, recipeId, customerId }) => ({
+          id,
+          recipeId,
+          customerId,
+        }),
+      );
 
       await this.orderRepository
         .createQueryBuilder()
         .insert()
         .into(OrderEntity)
-        .values(orderData)
+        .values(orderEntities)
         .execute();
 
-      await this.requestIngredients(recipe.ingredients, order);
+      const ingredientsRequest = {
+        ingredients: ingredientsMap,
+        orders: ordersInProgress.map((order) => ({ id: order.id })),
+      };
 
-      await this.processOrder(order, recipe);
+      console.log('Requesting ingredients in bulk:', ingredientsRequest);
 
-      const completedOrder = { ...order, statusId: OrderStatus.COMPLETED };
+      await this.requestIngredients(ingredientsRequest);
 
-      this.managerClient.emit(Events.ORDER_STATUS_CHANGED, completedOrder);
+      for (const order of ordersInProgress) {
+        await this.processOrder(order, order.recipeName);
+      }
 
-      console.log(`Kitchen Service has completed the order ${order.id}.`);
+      await queryRunner.commitTransaction();
+
+      console.log(`Kitchen Service has completed processing of orders.`);
     } catch (error) {
-      console.error(`Failed to process order ${order.id}:`, error);
+      console.error(`Failed to process orders:`, error);
 
-      const failedOrder = { ...order, statusId: OrderStatus.FAILED };
-
-      this.managerClient.emit(Events.ORDER_STATUS_CHANGED, failedOrder);
+      await queryRunner.rollbackTransaction();
+    } finally {
+      await queryRunner.release();
     }
   }
 
@@ -94,17 +122,18 @@ export class KitchenService {
     return recipes[randomIndex];
   }
 
-  async requestIngredients(
+  async requestIngredients(ingredientsRequest: {
     ingredients: {
       [key: string]: number;
-    },
-    order: OrderDto,
-  ) {
-    const ingredientsRequest = {
-      ingredients,
-      order,
     };
-    console.log('Asking for ingredients to the Warehouse:', ingredients);
+    orders: {
+      id: number;
+    }[];
+  }) {
+    console.log(
+      'Asking for ingredients to the Warehouse:',
+      ingredientsRequest.ingredients,
+    );
 
     try {
       return await firstValueFrom(
@@ -120,18 +149,26 @@ export class KitchenService {
     }
   }
 
-  async processOrder(order: any, recipe: RecipeEntity): Promise<void> {
-    console.log(`Preparing the order ${order.id} - ${recipe.name}...`);
+  async processOrder(order: any, recipeName: string): Promise<void> {
+    console.log(`Preparing the order ${order.id} - ${recipeName}...`);
 
     try {
       return new Promise<void>((resolve) => {
         setTimeout(() => {
-          console.log(`Order ${order.id} - ${recipe.name} prepared.`);
+          const completedOrder = { ...order, statusId: OrderStatus.COMPLETED };
+
+          console.log(`Order ${order.id} - ${recipeName} prepared.`);
+
+          this.managerClient.emit(Events.ORDER_STATUS_CHANGED, completedOrder);
           resolve();
-        }, 5000);
+        }, 3000);
       });
     } catch (error) {
+      const failedOrder = { ...order, statusId: OrderStatus.FAILED };
+
       console.error(`Failed processing the order ${order.id}:`, error);
+
+      this.managerClient.emit(Events.ORDER_STATUS_CHANGED, failedOrder);
 
       throw error;
     }
