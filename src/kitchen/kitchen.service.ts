@@ -11,6 +11,7 @@ import { Repository } from 'typeorm';
 import { RecipeEntity } from './entities/recipe.entity';
 import { OrderEntity } from './entities/order.entity';
 import { firstValueFrom } from 'rxjs';
+import { Events } from './enums/events.enum';
 
 @Injectable()
 export class KitchenService {
@@ -51,7 +52,7 @@ export class KitchenService {
         recipeName: recipe.name,
       };
 
-      this.managerClient.emit('order_status_changed', orderInProgress);
+      this.managerClient.emit(Events.ORDER_STATUS_CHANGED, orderInProgress);
 
       const orderData = {
         id: order.id,
@@ -68,13 +69,13 @@ export class KitchenService {
         .values(orderData)
         .execute();
 
-      await this.requestIngredients(recipe.ingredients);
+      await this.requestIngredients(recipe.ingredients, order);
 
       await this.processOrder(order, recipe);
 
       const completedOrder = { ...order, statusId: OrderStatus.COMPLETED };
 
-      this.managerClient.emit('order_status_changed', completedOrder);
+      this.managerClient.emit(Events.ORDER_STATUS_CHANGED, completedOrder);
 
       console.log(`Kitchen Service has completed the order ${order.id}.`);
     } catch (error) {
@@ -82,7 +83,7 @@ export class KitchenService {
 
       const failedOrder = { ...order, statusId: OrderStatus.FAILED };
 
-      this.managerClient.emit('order_status_changed', failedOrder);
+      this.managerClient.emit(Events.ORDER_STATUS_CHANGED, failedOrder);
     }
   }
 
@@ -93,12 +94,24 @@ export class KitchenService {
     return recipes[randomIndex];
   }
 
-  async requestIngredients(ingredients: { [key: string]: number }) {
+  async requestIngredients(
+    ingredients: {
+      [key: string]: number;
+    },
+    order: OrderDto,
+  ) {
+    const ingredientsRequest = {
+      ingredients,
+      order,
+    };
     console.log('Asking for ingredients to the Warehouse:', ingredients);
 
     try {
       return await firstValueFrom(
-        this.warehouseClient.send('request_ingredients', ingredients),
+        this.warehouseClient.send(
+          Events.REQUEST_INGREDIENTS,
+          ingredientsRequest,
+        ),
       );
     } catch (error) {
       console.error('Communication error with the Warehouse:', error);
@@ -111,16 +124,6 @@ export class KitchenService {
     console.log(`Preparing the order ${order.id} - ${recipe.name}...`);
 
     try {
-      const response = await firstValueFrom(
-        this.warehouseClient.send('reduce_ingredients', recipe.ingredients),
-      );
-
-      console.log('Ingredients reduced:', response);
-
-      if (!response.success) {
-        throw new Error('Failed to reduce ingredients in the Warehouse');
-      }
-
       return new Promise<void>((resolve) => {
         setTimeout(() => {
           console.log(`Order ${order.id} - ${recipe.name} prepared.`);
@@ -128,10 +131,7 @@ export class KitchenService {
         }, 5000);
       });
     } catch (error) {
-      console.error(
-        `Failed to reduce ingredients for order ${order.id}:`,
-        error,
-      );
+      console.error(`Failed processing the order ${order.id}:`, error);
 
       throw error;
     }

@@ -33,7 +33,8 @@ import { KitchenController } from './kitchen.controller';
           options: {
             urls: [configService.get<string>('RABBITMQ_URL')],
             queue: 'warehouse_queue',
-            queueOptions: { durable: false },
+            queueOptions: { durable: true },
+            prefetchCount: 1,
           },
         }),
       },
