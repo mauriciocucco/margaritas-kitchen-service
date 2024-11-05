@@ -161,7 +161,7 @@ export class KitchenService {
 
           this.managerClient.emit(Events.ORDER_STATUS_CHANGED, completedOrder);
           resolve();
-        }, 3000);
+        }, 500);
       });
     } catch (error) {
       const failedOrder = { ...order, statusId: OrderStatus.FAILED };
