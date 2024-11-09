@@ -29,7 +29,7 @@ async function bootstrap() {
       urls: [configService.get<string>('RABBITMQ_URL')],
       queue: 'kitchen_queue',
       queueOptions: {
-        durable: false,
+        durable: true,
       },
     },
   });

@@ -73,7 +73,9 @@ export class KitchenService {
         }
       }
 
-      this.managerClient.emit(Events.ORDER_STATUS_CHANGED, ordersInProgress);
+      await firstValueFrom(
+        this.managerClient.emit(Events.ORDER_STATUS_CHANGED, ordersInProgress),
+      );
 
       const orderEntities = ordersInProgress.map(
         ({ id, recipeId, customerId }) => ({
@@ -97,7 +99,9 @@ export class KitchenService {
 
       console.log('Requesting ingredients in bulk:', ingredientsRequest);
 
-      await this.requestIngredients(ingredientsRequest);
+      const { success } = await this.requestIngredients(ingredientsRequest);
+
+      if (!success) throw new Error('Failed to request ingredients');
 
       await this.processOrder(ordersInProgress);
 
@@ -105,9 +109,18 @@ export class KitchenService {
 
       console.log(`Kitchen Service has completed processing of orders.`);
     } catch (error) {
-      console.error(`Failed to process orders:`, error);
+      console.error(`handleOrderDispatched error:`, error);
+
+      const failedOrders = orders.map((order) => ({
+        id: order.id,
+        statusId: OrderStatus.FAILED,
+      }));
 
       await queryRunner.rollbackTransaction();
+
+      await firstValueFrom(
+        this.managerClient.emit(Events.ORDER_STATUS_CHANGED, failedOrders),
+      );
     } finally {
       await queryRunner.release();
     }
@@ -127,7 +140,7 @@ export class KitchenService {
     orders: {
       id: number;
     }[];
-  }) {
+  }): Promise<{ success: boolean }> {
     console.log(
       'Asking for ingredients to the Warehouse:',
       ingredientsRequest.ingredients,
@@ -135,7 +148,7 @@ export class KitchenService {
 
     try {
       return await firstValueFrom(
-        this.warehouseClient.emit(
+        this.warehouseClient.send(
           Events.REQUEST_INGREDIENTS,
           ingredientsRequest,
         ),
@@ -150,17 +163,25 @@ export class KitchenService {
   async processOrder(orders: OrderDto[]) {
     console.log(`Preparing the orders: ${JSON.stringify(orders)}`);
 
-    const completedOrders = orders.map((order) => ({
-      id: order.id,
-      statusId: OrderStatus.COMPLETED,
-    }));
+    try {
+      const completedOrders = orders.map((order) => ({
+        id: order.id,
+        statusId: OrderStatus.COMPLETED,
+      }));
 
-    console.log(
-      `Orders processed successfully: ${JSON.stringify(completedOrders)}`,
-    );
+      console.log(
+        `Orders processed successfully: ${JSON.stringify(completedOrders)}`,
+      );
 
-    await new Promise<void>((resolve) => setTimeout(resolve, 3000));
+      await new Promise<void>((resolve) => setTimeout(resolve, 3000));
 
-    this.managerClient.emit(Events.ORDER_STATUS_CHANGED, completedOrders);
+      return await firstValueFrom(
+        this.managerClient.emit(Events.ORDER_STATUS_CHANGED, completedOrders),
+      );
+    } catch (error) {
+      console.error('Failed to process orders:', error);
+
+      throw new InternalServerErrorException(error);
+    }
   }
 }

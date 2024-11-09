@@ -1,5 +1,5 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { EventPattern } from '@nestjs/microservices';
+import { EventPattern, Payload } from '@nestjs/microservices';
 import { KitchenService } from './kitchen.service';
 import { OrderDto } from './dtos/order.dto';
 import { ApiGatewayGuard } from '../common/guards/api-gateway.guard';
@@ -16,7 +16,7 @@ export class KitchenController {
   }
 
   @EventPattern(Events.ORDER_DISPATCHED)
-  async handleOrderDispatched(orders: OrderDto[]) {
+  async handleOrderDispatched(@Payload() orders: OrderDto[]) {
     await this.kitchenService.handleOrderDispatched(orders);
   }
 }
