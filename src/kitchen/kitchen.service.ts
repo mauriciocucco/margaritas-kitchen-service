@@ -99,9 +99,7 @@ export class KitchenService {
 
       await this.requestIngredients(ingredientsRequest);
 
-      for (const order of ordersInProgress) {
-        await this.processOrder(order, order.recipeName);
-      }
+      await this.processOrder(ordersInProgress);
 
       await queryRunner.commitTransaction();
 
@@ -137,7 +135,7 @@ export class KitchenService {
 
     try {
       return await firstValueFrom(
-        this.warehouseClient.send(
+        this.warehouseClient.emit(
           Events.REQUEST_INGREDIENTS,
           ingredientsRequest,
         ),
@@ -149,28 +147,20 @@ export class KitchenService {
     }
   }
 
-  async processOrder(order: any, recipeName: string): Promise<void> {
-    console.log(`Preparing the order ${order.id} - ${recipeName}...`);
+  async processOrder(orders: OrderDto[]) {
+    console.log(`Preparing the orders: ${JSON.stringify(orders)}`);
 
-    try {
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          const completedOrder = { ...order, statusId: OrderStatus.COMPLETED };
+    const completedOrders = orders.map((order) => ({
+      id: order.id,
+      statusId: OrderStatus.COMPLETED,
+    }));
 
-          console.log(`Order ${order.id} - ${recipeName} prepared.`);
+    console.log(
+      `Orders processed successfully: ${JSON.stringify(completedOrders)}`,
+    );
 
-          this.managerClient.emit(Events.ORDER_STATUS_CHANGED, completedOrder);
-          resolve();
-        }, 500);
-      });
-    } catch (error) {
-      const failedOrder = { ...order, statusId: OrderStatus.FAILED };
+    await new Promise<void>((resolve) => setTimeout(resolve, 3000));
 
-      console.error(`Failed processing the order ${order.id}:`, error);
-
-      this.managerClient.emit(Events.ORDER_STATUS_CHANGED, failedOrder);
-
-      throw error;
-    }
+    this.managerClient.emit(Events.ORDER_STATUS_CHANGED, completedOrders);
   }
 }
