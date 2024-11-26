@@ -7,7 +7,7 @@ import { ClientProxy } from '@nestjs/microservices';
 import { OrderDto } from './dtos/order.dto';
 import { OrderStatus } from './enums/order-status.enum';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { RecipeEntity } from './entities/recipe.entity';
 import { OrderEntity } from './entities/order.entity';
 import { firstValueFrom } from 'rxjs';
@@ -20,8 +20,6 @@ export class KitchenService {
     @Inject('WAREHOUSE_SERVICE') private readonly warehouseClient: ClientProxy,
     @InjectRepository(RecipeEntity)
     private readonly recipeRepository: Repository<RecipeEntity>,
-    @InjectRepository(OrderEntity)
-    private readonly orderRepository: Repository<OrderEntity>,
     private readonly dataSource: DataSource,
   ) {
     this.managerClient.connect();
@@ -51,7 +49,7 @@ export class KitchenService {
       await queryRunner.startTransaction();
 
       for (const order of orders) {
-        const recipe = await this.getRandomRecipe();
+        const recipe = await this.getRandomRecipe(queryRunner.manager);
 
         console.log(
           `Random recipe selected for order ${order.id}: ${recipe.name}`,
@@ -61,6 +59,7 @@ export class KitchenService {
           ...order,
           statusId: OrderStatus.IN_PROGRESS,
           recipeName: recipe.name,
+          recipeId: recipe.id,
         };
 
         ordersInProgress.push(orderInProgress);
@@ -85,7 +84,7 @@ export class KitchenService {
         }),
       );
 
-      await this.orderRepository
+      await queryRunner.manager
         .createQueryBuilder()
         .insert()
         .into(OrderEntity)
@@ -116,21 +115,33 @@ export class KitchenService {
         statusId: OrderStatus.FAILED,
       }));
 
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
 
       await firstValueFrom(
         this.managerClient.emit(Events.ORDER_STATUS_CHANGED, failedOrders),
       );
     } finally {
-      await queryRunner.release();
+      if (!queryRunner.isReleased) {
+        await queryRunner.release();
+      }
     }
   }
 
-  async getRandomRecipe(): Promise<RecipeEntity> {
-    const recipes = await this.recipeRepository.find();
-    const randomIndex = Math.floor(Math.random() * recipes.length);
+  async getRandomRecipe(manager: EntityManager): Promise<RecipeEntity> {
+    try {
+      const recipes = await manager
+        .createQueryBuilder(RecipeEntity, 'recipe')
+        .getMany();
+      const randomIndex = Math.floor(Math.random() * recipes.length);
 
-    return recipes[randomIndex];
+      return recipes[randomIndex];
+    } catch (error) {
+      console.error('Failed to get random recipe:', error);
+
+      throw new InternalServerErrorException(error);
+    }
   }
 
   async requestIngredients(ingredientsRequest: {
